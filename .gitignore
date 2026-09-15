@@ -18,9 +18,13 @@ htmlcov/
 
 # JavaScript dependencies and build output
 node_modules/
+.pnpm-store/
+*.tsbuildinfo
 dist/
 build/
 coverage/
+playwright-report/
+test-results/
 
 # Runtime data and logs
 /data/
