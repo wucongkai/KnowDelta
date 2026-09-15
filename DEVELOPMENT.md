@@ -1,7 +1,7 @@
 # 个性化视频图文学习助手：开发方案
 
 > 文档日期：2026-09-12  
-> 状态：待实施的开发基线，当前工区作尚未实现应用。  
+> 状态（2026-09-15 更新）：已实现 Python 管线及 React + FastAPI + PostgreSQL + Celery/Redis 前后端分离工作区，详见 [当前架构](docs/ARCHITECTURE.md) 和 README。本文件中的个性化学习、Milvus 检索及 LangGraph 等仍为后续规划，不能视为已实现能力。
 > 已确定的数据库方案：PostgreSQL + Milvus。PostgreSQL 保存业务事实和工作流检查点，Milvus 提供可重建的检索索引。  
 > 目标：把视频转换成可追溯的图文学习材料，并根据个人已有知识、掌握证据和学习目标调整讲解重点。
 
