@@ -66,3 +66,16 @@ class Capabilities(BaseModel):
 
 class Health(BaseModel):
     status: str
+
+
+class PdfExportView(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    job_id: str
+    content_version: str
+    renderer_version: str
+    status: Literal["queued", "running", "completed", "failed"]
+    attempt: int
+    error: str | None
+    created_at: datetime
+    updated_at: datetime

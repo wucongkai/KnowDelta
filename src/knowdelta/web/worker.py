@@ -47,14 +47,24 @@ def dispatch_pending():
 
 
 def dispatch_loop(stop: threading.Event):
+    from .pdf_jobs import dispatch_pdf_pending
+
     while not stop.is_set():
-        try:
-            dispatch_pending()
-            recover_stale()
-        except Exception:
-            # Unsent outbox records remain in the database for a later attempt.
-            pass
+        for action in (dispatch_pending, dispatch_pdf_pending, recover_stale):
+            try:
+                action()
+            except Exception:
+                # An unavailable export queue must not block video dispatch or recovery.
+                # Unsent outbox records remain in the database for a later attempt.
+                pass
         stop.wait(3)
+
+
+@celery_app.task(name="knowdelta.pdf_export")
+def process_pdf_export(export_id: str, attempt: int):
+    from .pdf_jobs import execute_export
+
+    execute_export(export_id, attempt)
 
 
 def recover_stale():

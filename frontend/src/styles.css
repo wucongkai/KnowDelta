@@ -2444,3 +2444,46 @@ small {
     scroll-behavior: auto !important;
   }
 }
+
+.export-control {
+  position: relative;
+  display: block !important;
+}
+.download-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px 14px;
+  text-align: left;
+  font-size: 12px;
+}
+.download-menu button:hover {
+  background: #edf3e5;
+}
+.pdf-export-status {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 9;
+  width: max-content;
+  max-width: min(310px, 80vw);
+  padding: 9px 12px;
+  background: #f1f5ec;
+  border: 1px solid #dce5d4;
+  border-radius: 7px;
+  font-size: 12px;
+  box-shadow: 0 3px 12px #234d3c0b;
+}
+.pdf-export-status a,
+.pdf-export-status span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.pdf-export-status button {
+  display: block;
+  color: #234d3c;
+  text-decoration: underline;
+  padding: 4px 0;
+}

@@ -1,3 +1,4 @@
+import ExportMenu from '../components/ExportMenu'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -10,7 +11,6 @@ import {
   CheckCircle2,
   ChevronDown,
   Clock3,
-  Download,
   ExternalLink,
   FileText,
   Image,
@@ -24,7 +24,6 @@ import {
 } from 'lucide-react'
 import {
   client,
-  downloadUrl,
   errorMessage,
   formatTime,
   frameUrl,
@@ -205,18 +204,7 @@ function NoteReader({ data }: { data: NoteData }) {
             <BookOpen size={15} />
             {focus ? '退出专注' : '专注阅读'}
           </button>
-          <details className="download-menu">
-            <summary className="button primary small">
-              <Download size={15} />
-              导出笔记
-              <ChevronDown size={13} />
-            </summary>
-            <div>
-              <a href={downloadUrl(job.id, 'zip')}>完整图文包 · ZIP</a>
-              <a href={downloadUrl(job.id, 'md')}>文字与图片引用 · Markdown</a>
-              <a href={downloadUrl(job.id, 'html')}>网页文件 · HTML</a>
-            </div>
-          </details>
+          <ExportMenu jobId={job.id} />
         </div>
       </div>
       <div className="reader-heading">
