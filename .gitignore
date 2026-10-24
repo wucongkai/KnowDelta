@@ -28,6 +28,8 @@ test-results/
 
 # Runtime data and logs
 /data/
+/tmp/pdfs/
+/output/pdf/
 *.log
 
 # Local editor and operating system files

@@ -57,6 +57,18 @@ flowchart LR
 
 ## API 契约与前端状态
 
+### PDF 导出
+
+阅读页的 `ExportMenu` 通过 `POST /api/v1/jobs/{job_id}/exports/pdf` 创建导出，再查询 `GET /api/v1/exports/{export_id}`；完成后访问该导出的 `/download`。`GET /api/v1/jobs/{job_id}/exports/pdf` 恢复当前内容版本的已有导出状态。
+
+`PdfExport` 和 `PdfDispatch` 独立记录导出状态与待发消息，数据库迁移为 `0002_pdf_exports`。消息投递到 `pdf` 队列，由专用 Worker 领取，再启动独立 Python 渲染进程。180 秒超时、心跳、条件领取与递增 attempt 防止卡死和旧任务覆盖重试结果；PDF 失败不改变视频任务状态。
+
+`pdf_exporter.py` 从结构化笔记和截图构建专用 HTML/CSS，使用 WeasyPrint 生成 A4 PDF。正文保持文本，图片和 Noto Sans CJK 中文字体嵌入文件；资源加载器只允许本次生成的内存资源表，不访问外网。缺失图片或渲染资源错误会使导出失败，成功后才原子替换输出文件。
+
+缓存键由笔记 ID、源数据及图片内容哈希、渲染版本组成。渲染版本包含 WeasyPrint 版本、CSS 与字体哈希；修改 HTML 模板逻辑时需递增 `RENDERER_VERSION`。导出不会重新执行视频下载、ASR 或模型调用。运行方式与验收边界见 [README](../README.md#导出-pdf) 和 [PDF 验收](../evals/PDF_ACCEPTANCE.md)。
+
+### 类型与状态管理
+
 FastAPI/Pydantic 导出 `backend/openapi.json`，`openapi-typescript` 生成前端类型，`openapi-fetch` 提供类型约束请求。修改 schema 后重新生成并提交两份文件，运行 TypeScript 构建检查调用方。
 
 TanStack Query 管理服务端查询、缓存、错误和失效刷新；表单、视图切换等临时状态留在 React 组件。依赖版本由 `uv.lock` 与 `frontend/pnpm-lock.yaml` 固定。数据库结构由迁移维护，应用启动不偷偷建表。

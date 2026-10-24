@@ -168,3 +168,124 @@ def test_outbox_failure_keeps_dispatch_pending(api, monkeypatch):
         worker.dispatch_pending()
     with factory() as db:
         assert db.scalar(select(Dispatch)).sent_at is None
+
+
+def test_pdf_export_lifecycle_idempotency_retry_and_video_isolation(api, local_input, monkeypatch):
+    from knowdelta.web import pdf_jobs
+    from knowdelta.web.tables import PdfDispatch, PdfExport
+
+    client, factory, root = api
+    monkeypatch.setattr(pdf_jobs, "get_session_factory", lambda: factory)
+    video, subtitles = local_input
+    directory = run(
+        Options(video=video, subtitles=subtitles, output=root / "jobs", extractive=True)
+    )
+    with factory() as db:
+        job = Job(
+            request_key="pdf-note", mode="extractive", options={}, **complete_values(directory)
+        )
+        db.add(job)
+        db.commit()
+        job_id = job.id
+    url = f"/api/v1/jobs/{job_id}/exports/pdf"
+    assert client.get(url).json() is None
+    first = client.post(url)
+    assert first.status_code == 202, first.text
+    export_id = first.json()["id"]
+    assert "source_path" not in first.text
+    assert client.post(url).json()["id"] == export_id
+    with factory() as db:
+        assert len(list(db.scalars(select(PdfDispatch)))) == 1
+    download = f"/api/v1/exports/{export_id}/download"
+    assert client.get(download).status_code == 409
+    # Real subprocess render, not a fake successful PDF.
+    pdf_jobs.execute_export(export_id, 1)
+    assert client.get(f"/api/v1/exports/{export_id}").json()["status"] == "completed"
+    response = client.get(download)
+    assert response.status_code == 200 and response.content.startswith(b"%PDF-")
+    assert response.headers["content-type"] == "application/pdf"
+    assert client.post(url).json()["attempt"] == 1
+    with factory() as db:
+        export = db.get(PdfExport, export_id)
+        pdf_jobs.output_path(export).unlink()
+    assert client.get(url).json() is None
+    assert client.post(url).json()["attempt"] == 2
+
+    # A rendering failure should affect only the export, never the video job.
+    def broken(*args, **kwargs):
+        raise OSError("simulated missing renderer")
+
+    monkeypatch.setattr(pdf_jobs.subprocess, "Popen", broken)
+    pdf_jobs.execute_export(export_id, 2)
+    assert client.get(f"/api/v1/exports/{export_id}").json()["status"] == "failed"
+    assert client.get(f"/api/v1/jobs/{job_id}").json()["status"] == "completed"
+    assert client.post(url).json()["attempt"] == 3
+    assert client.get("/api/v1/exports/unknown/download").status_code == 404
+
+    # Updated layouts never offer an older renderer's cached PDF as the current export.
+    original_version = pdf_jobs.renderer_version()
+    monkeypatch.setattr(pdf_jobs, "renderer_version", lambda: original_version + "-updated")
+    assert client.get(url).json() is None
+    replacement = client.post(url)
+    assert replacement.status_code == 202 and replacement.json()["id"] != export_id
+
+
+def test_pdf_dispatch_error_does_not_block_video_jobs(monkeypatch):
+    import threading
+
+    from knowdelta.web import pdf_jobs, worker
+
+    stop = threading.Event()
+    calls = []
+
+    def failed_pdf():
+        calls.append("pdf")
+        raise ConnectionError("export dispatch unavailable")
+
+    def recover():
+        calls.append("recover")
+        stop.set()
+
+    monkeypatch.setattr(worker, "dispatch_pending", lambda: calls.append("video"))
+    monkeypatch.setattr(pdf_jobs, "dispatch_pdf_pending", failed_pdf)
+    monkeypatch.setattr(worker, "recover_stale", recover)
+    worker.dispatch_loop(stop)
+    assert calls == ["video", "pdf", "recover"]
+
+
+def test_pdf_dispatch_failure_and_duplicate_delivery(api, local_input, monkeypatch):
+    from knowdelta.web import pdf_jobs, worker
+    from knowdelta.web.tables import PdfDispatch, PdfExport
+
+    client, factory, root = api
+    monkeypatch.setattr(pdf_jobs, "get_session_factory", lambda: factory)
+    video, subtitles = local_input
+    directory = run(
+        Options(video=video, subtitles=subtitles, output=root / "jobs", extractive=True)
+    )
+    with factory() as db:
+        job = Job(
+            request_key="pdf-dispatch", mode="extractive", options={}, **complete_values(directory)
+        )
+        db.add(job)
+        db.commit()
+        job_id = job.id
+    export_id = client.post(f"/api/v1/jobs/{job_id}/exports/pdf").json()["id"]
+
+    def unavailable(*args, **kwargs):
+        raise ConnectionError("broker offline")
+
+    monkeypatch.setattr(worker.process_pdf_export, "apply_async", unavailable)
+    with pytest.raises(ConnectionError):
+        pdf_jobs.dispatch_pdf_pending()
+    with factory() as db:
+        assert db.scalar(select(PdfDispatch)).sent_at is None
+        export = db.get(PdfExport, export_id)
+        export.status = "running"
+        db.commit()
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("duplicate delivery started rendering")
+
+    monkeypatch.setattr(pdf_jobs.subprocess, "Popen", unexpected)
+    pdf_jobs.execute_export(export_id, 1)

@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, DateTime, Integer, String, Text
+from sqlalchemy import JSON, DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
@@ -45,4 +45,28 @@ class Dispatch(Base):
     job_id: Mapped[str] = mapped_column(String(36), index=True)
     attempt: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PdfExport(Base):
+    __tablename__ = "pdf_exports"
+    __table_args__ = (UniqueConstraint("job_id", "content_version", "renderer_version"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    job_id: Mapped[str] = mapped_column(String(36), index=True)
+    content_version: Mapped[str] = mapped_column(String(64))
+    renderer_version: Mapped[str] = mapped_column(String(100))
+    source_path: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
+    attempt: Mapped[int] = mapped_column(Integer, default=1)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class PdfDispatch(Base):
+    __tablename__ = "pdf_dispatches"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    export_id: Mapped[str] = mapped_column(String(36), index=True)
+    attempt: Mapped[int] = mapped_column(Integer)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

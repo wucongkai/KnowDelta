@@ -17,7 +17,9 @@ uv run alembic -c backend/alembic.ini upgrade head
 uv run knowdelta-import
 ```
 
-分别在三个终端启动：
+本机 PDF 渲染依赖 Pango。macOS 若尚未安装，先运行 `brew install pango`；程序自动查找标准 Homebrew 库目录。中文字体随项目提供。已有安装更新后，也需执行上面的依赖同步和数据库迁移，再重启 API 与 Worker。
+
+分别在四个终端启动：
 
 ```bash
 # 终端 1：API
@@ -26,7 +28,10 @@ uv run knowdelta-api
 # 终端 2：视频处理 Worker（macOS 使用 solo，避免原生音视频库 fork 冲突）
 uv run celery -A knowdelta.web.worker:celery_app worker --pool=solo --concurrency=1 --loglevel=INFO
 
-# 终端 3：前端
+# 终端 3：PDF 导出 Worker（独立队列）
+uv run celery -A knowdelta.web.worker:celery_app worker -Q pdf --pool=solo --concurrency=1 --loglevel=INFO --hostname=pdf@%h
+
+# 终端 4：前端
 cd frontend
 pnpm install --frozen-lockfile
 pnpm dev
@@ -38,7 +43,7 @@ pnpm dev
 - 笔记库提供搜索、状态筛选、网格/列表；阅读页提供截图放大、原始转写、段落时间回跳和专注模式。
 - 取消只停止本次任务，保留已经成功的阶段；失败与取消任务均可重试。进度按处理阶段展示。
 - 网页的本地上传支持视频及可选字幕；默认 2 GiB 视频、10 MiB 字幕。处理完成后可对照原视频。
-- 分享时使用「完整图文包 ZIP」；单独下载的 Markdown/HTML 仍引用 `assets/` 图片目录。
+- 分享时可用「PDF · 含图片」或「完整图文包 ZIP」；单独下载的 Markdown/HTML 仍引用 `assets/` 图片目录。
 - 本版本面向**本机单人使用**，没有账号和权限系统。默认端口仅监听回环地址。
 
 ### 完整容器版
@@ -47,7 +52,7 @@ pnpm dev
 docker compose -f compose.yaml -f compose.app.yaml up --build -d
 ```
 
-打开 [容器版工作台](http://127.0.0.1:8080/)。这个组合使用独立的 `knowdelta-container` 项目和数据卷，不与开发版数据库或素材混用；前端由 Nginx 提供静态文件并代理 API，API 和 Worker 是独立容器。首次构建需要下载镜像与依赖，首次 ASR 需要下载模型。此配置只开放本机 8080 端口。
+打开 [容器版工作台](http://127.0.0.1:8080/)。这个组合使用独立的 `knowdelta-container` 项目和数据卷，不与开发版数据库或素材混用；前端由 Nginx 提供静态文件并代理 API，API、视频 Worker 和 PDF Worker 是独立容器，镜像包含 PDF 原生依赖与中文字体。首次构建需要下载镜像与依赖，首次 ASR 需要下载模型。此配置只开放本机 8080 端口。
 
 ```bash
 # 查看处理日志 / 停止容器（保留数据卷）
@@ -56,6 +61,14 @@ docker compose -f compose.yaml -f compose.app.yaml down
 ```
 
 架构、设计取舍及参考项目见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。整体产品规划见 [DEVELOPMENT.md](DEVELOPMENT.md)。
+
+### 导出 PDF
+
+打开已完成笔记，在「导出笔记」中选择「PDF · 含图片」，等待后台生成后点击下载。页面显示排队、生成、失败重试和下载状态；PDF Worker 必须运行，否则任务会保持排队。
+
+PDF 包含全文、截图、图注、来源链接、目录与页码，嵌入中文字体，下载后可离线阅读、搜索和打印。历史笔记也可导出，不重新转写或调用模型。相同内容复用缓存；笔记、图片或排版版本变化后重新生成。缺图会明确报错，PDF 失败不改变原笔记状态。
+
+实现与验证记录见 [PDF 验收](evals/PDF_ACCEPTANCE.md)。
 
 ## 命令行用法
 

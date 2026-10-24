@@ -19,7 +19,8 @@ from knowdelta.storage import PipelineError, asset_file, read_json
 
 from .config import get_settings
 from .db import get_db
-from .schemas import Capabilities, Health, JobCreate, JobList, JobView, NoteView
+from .pdf_jobs import current_export, get_export, output_path, request_export
+from .schemas import Capabilities, Health, JobCreate, JobList, JobView, NoteView, PdfExportView
 from .services import artifact, capabilities, create_job, get_job, require_mode, retry_job
 from .tables import Dispatch, Job, now
 
@@ -268,6 +269,41 @@ def make_app(*, dispatch: bool = True) -> FastAPI:
     def download(job_id: str, kind: Literal["zip", "md", "html"], db: DB):
         job = get_job(db, job_id)
         return FileResponse(artifact(job, f"note.{kind}"), filename=f"KnowDelta-note.{kind}")
+
+    @app.post(
+        "/api/v1/jobs/{job_id}/exports/pdf",
+        response_model=PdfExportView,
+        status_code=202,
+        operation_id="create_pdf_export",
+    )
+    def create_pdf(job_id: str, db: DB):
+        return request_export(db, job_id)
+
+    @app.get(
+        "/api/v1/jobs/{job_id}/exports/pdf",
+        response_model=PdfExportView | None,
+        operation_id="latest_pdf_export",
+    )
+    def latest_pdf(job_id: str, db: DB):
+        return current_export(db, job_id)
+
+    @app.get(
+        "/api/v1/exports/{export_id}",
+        response_model=PdfExportView,
+        operation_id="get_pdf_export",
+    )
+    def pdf_status(export_id: str, db: DB):
+        return get_export(db, export_id)
+
+    @app.get("/api/v1/exports/{export_id}/download", operation_id="download_pdf_export")
+    def pdf_download(export_id: str, db: DB):
+        export = get_export(db, export_id)
+        if export.status != "completed":
+            raise HTTPException(409, "PDF 还未生成完成")
+        path = output_path(export)
+        if not path.is_file():
+            raise HTTPException(404, "PDF 文件不存在，请重新生成")
+        return FileResponse(path, media_type="application/pdf", filename="KnowDelta-note.pdf")
 
     return app
 
